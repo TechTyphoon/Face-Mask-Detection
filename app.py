@@ -1,11 +1,27 @@
+# Fix for Python 3.12 compatibility
+import inspect
+if not hasattr(inspect, 'ArgSpec'):
+    inspect.ArgSpec = inspect.FullArgSpec
+
 import streamlit as st
 from PIL import Image, ImageEnhance
 import numpy as np
 import cv2
 import os
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-from tensorflow.keras.preprocessing.image import img_to_array
-from tensorflow.keras.models import load_model
+
+# Alternative approach for TensorFlow imports
+@st.cache_resource
+def load_tensorflow_components():
+    try:
+        import tensorflow as tf
+        from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+        from tensorflow.keras.preprocessing.image import img_to_array
+        from tensorflow.keras.models import load_model
+        return tf, preprocess_input, img_to_array, load_model
+    except Exception as e:
+        st.error(f"Error loading TensorFlow: {e}")
+        return None, None, None, None
+
 import detect_mask_image
 
 # Setting custom Page Title and Icon with changed layout and sidebar state
@@ -20,6 +36,13 @@ def local_css(file_name):
 
 def mask_image():
     global RGB_img
+    
+    # Load TensorFlow components
+    tf, preprocess_input, img_to_array, load_model = load_tensorflow_components()
+    if load_model is None:
+        st.error("Could not load TensorFlow components.")
+        return
+    
     # load our serialized face detector model from disk
     print("[INFO] loading face detector model...")
     prototxtPath = os.path.sep.join(["face_detector", "deploy.prototxt"])
@@ -29,7 +52,17 @@ def mask_image():
 
     # load the face mask detector model from disk
     print("[INFO] loading face mask detector model...")
-    model = load_model("mask_detector.model")
+    try:
+        model = load_model("mask_detector.model")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        try:
+            # Try loading with compile=False for compatibility
+            model = load_model("mask_detector.model", compile=False)
+        except Exception as e2:
+            print(f"Failed to load model with compile=False: {e2}")
+            st.error("Could not load the face mask detection model.")
+            return
 
     # load the input image from disk and grab the image spatial
     # dimensions
